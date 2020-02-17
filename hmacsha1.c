@@ -40,17 +40,24 @@ args_ok(int argc, char *argv[])
 	return n_args_is_ok(argc) && files_ok(argv);
 }
 
+void print_hexa(unsigned char *str, int len)
+{
+	for(int i = 0; i < len; i++)
+		printf("%02x", str[i]);
+
+	printf("\n");
+}
+
 void
 print_hmacsha1(char *data_file, char *key_file)
 {
 	/*
 	 *Print hmacsha1 of data file given key
 	 */
-
-	//Open data file and read
 	FILE *data_fd;
 	int eof = 0;
 	SHA_CTX c;
+	unsigned char md[SHA_DIGEST_LENGTH];
 
 	data_fd = fopen(data_file, "r");
 	if(data_fd == NULL)
@@ -69,6 +76,10 @@ print_hmacsha1(char *data_file, char *key_file)
 			SHA1_Update(&c, data_buf, strlen(data_buf));
 		}
 	}
+	SHA1_Final(md, &c);
+
+	print_hexa(md, SHA_DIGEST_LENGTH);
+
 	fclose(data_fd);
 }
 
