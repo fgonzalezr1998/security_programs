@@ -11,6 +11,20 @@ enum{
 	NArgs = 3,
 	BlockSize = 64,
 	MaxKeyLen = 2048,
+	IPadByte = 0x36,
+	OPadByte = 0x5C,
+};
+
+typedef struct CellType CellType;
+struct CellType{
+	unsigned char elem;
+	CellType *next;
+};
+
+typedef struct ListType ListType;
+struct ListType{
+	CellType *first; //pointer to first element
+	int n_elems; //number o elements in the list
 };
 
 int
@@ -40,7 +54,40 @@ args_ok(int argc, char *argv[])
 	return n_args_is_ok(argc) && files_ok(argv);
 }
 
-void print_hexa(unsigned char *str, int len)
+/*
+ * LINKED LIST OPERATIONS
+ */
+
+ void
+ init_list(ListType *list)
+ {
+	list->first = NULL;
+	list->n_elems = 0;
+ }
+
+ void
+ add_to_list(ListType *list, unsigned char c)
+ {
+	 /*
+	  *List implemented like a queue
+	  */
+	CellType *new_cell = NULL;
+	CellType *aux = list->first;
+
+	while(aux->next != NULL){
+		aux = aux->next;
+	}
+	new_cell = malloc(sizeof(unsigned char));
+	if(new_cell == NULL)
+		errx(EXIT_FAILURE, "%s\n", "Allocate memory failed");
+	new_cell->elem = c;
+	new_cell->next = NULL;
+	aux->next = new_cell;
+	(list->n_elems)++;
+ }
+
+void
+print_hexa(unsigned char *str, int len)
 {
 	/*
 	 *print 'str' using hexadecimal format
@@ -49,6 +96,26 @@ void print_hexa(unsigned char *str, int len)
 		printf("%02x", str[i]);
 
 	printf("\n");
+}
+
+void
+yellow()
+{
+	fprintf(stderr, "\033[1;33m");
+}
+
+void
+reset()
+{
+	fprintf(stderr, "\033[0m");
+}
+
+void
+raise_warning_len()
+{
+	yellow();
+	fprintf(stderr, "[WARN] Key length is shorter than %d, you should use a longer key\n", SHA_DIGEST_LENGTH);
+	reset();
 }
 
 void
@@ -69,45 +136,80 @@ get_sha1(char *data_file, unsigned char *sha1_hash)
 	//read data
 	char data_buf[BlockSize];
 
-	SHA1_Init(&c);
+	if(! SHA1_Init(&c)){
+		errx(EXIT_FAILURE, "%s\n", "Hash failed");
+	}
 	while(! eof){
 		if(fgets(data_buf, BlockSize, data_fd) == NULL){
 			eof = 1;
 			continue;
 		}else{
-			//update hash
 			SHA1_Update(&c, data_buf, strlen(data_buf));
 		}
 	}
 	SHA1_Final(sha1_hash, &c);
 	fclose(data_fd);
 }
+/*
+void
+add_padding(unsigned char *src, int block_size)
+{
+	int padding_len;
+	unsigned char *padding = NULL;
 
+	padding_len = block_size - strlen((char *)src) + 1;
+	printf("%d\n", padding_len);
+	padding = (unsigned char*)malloc((padding_len + 1) * sizeof(char));
+	if(padding == NULL){
+		errx(EXIT_FAILURE, "%s\n", "Memory Allocation Failed");
+	}
+
+	memset(padding, '0', padding_len); //TRATAR UN POSIBLE ERROR DE MEMSET!
+	strncat(src, padding, padding_len);
+}
+
+void
+set_key_length(unsigned char *key, int size)
+{
+	if(strlen((char *)key) < size)
+		add_padding(key, BlockSize);
+	else
+		key[BlockSize - 1] = '\0';
+}
+*/
 void
 get_key(char *key_file, char *key)
 {
 	FILE *key_fd;
-	int eof = 0;
-	char key_buf[BlockSize];
 
 	//open file
 	key_fd = fopen(key_file, "r");
 	if(key_fd == NULL)
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
-	key[0] = '\0'; //this is for strncat() knows 'key' is a empty string the first time
-	while(! eof){
-		if(fgets(key_buf, BlockSize, key_fd) == NULL){
-			eof = 1;
-			continue;
-		}else{
-			strncat(key, key_buf, strlen(key_buf));
-		}
+	//Leer del fichero llamando a read
+	/*
+	while(1){
+		n_bytes_rode = read(key_fd, key_buf)
+		if(n_bytes_rode < 0)
+			errx(EXIT_FAILURE, "%s\n", "File reading failed");
+		if(bytes == 0)
+			break;
+		add()
+		key_len += n_bytes_rode;
+
 	}
-	fclose(key_fd);
+
+	fclose(key_fd); //close file
+
+	if(strlen((unsigned char*)key) < SHA_DIGEST_LENGTH){
+		raise_warning_len();
+	}
 	//if key length is smaller than, BlockSize, add padding until BlockSize
-	if(strlen(key) < BlockSize)
-		add_padding(key, BlockSize);
+	set_key_length(key, BlockSize);
+	// ******* HASTA AQUI ESTA BIEN! *******
+	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
+	*/
 }
 
 void
@@ -116,23 +218,26 @@ print_hmacsha1(char *data_file, char *key_file)
 	/*
 	 *Print hmacsha1 of data file given key
 	 */
+	ListType list;
 	unsigned char sha1_hash[SHA_DIGEST_LENGTH];
 	char key[MaxKeyLen];
+	//unsigned char ipad[BlockSize];
+
+	init_list(&list);
 
 	//1º Get key from key_file
 	get_key(key_file, key);
-	printf("%s\n", key);
+
+	//get_ipad();
 
 	get_sha1(data_file, sha1_hash);
-	print_hexa(sha1_hash, SHA_DIGEST_LENGTH);
 }
 
 int
 main(int argc, char *argv[])
 {
-	if(! args_ok(argc, argv)){
+	if(! args_ok(argc, argv))
 		errx(EXIT_FAILURE, "%s\n", "[Usage Error] invalid arguments");
-	}
 
 	print_hmacsha1(argv[NArgs - 2], argv[NArgs - 1]);
 
