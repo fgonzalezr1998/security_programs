@@ -15,18 +15,6 @@ enum{
 	OPadByte = 0x5C,
 };
 
-typedef struct CellType CellType;
-struct CellType{
-	unsigned char elem;
-	CellType *next;
-};
-
-typedef struct ListType ListType;
-struct ListType{
-	CellType *first; //pointer to first element
-	int n_elems; //number o elements in the list
-};
-
 int
 n_args_is_ok(int n)
 {
@@ -53,38 +41,6 @@ args_ok(int argc, char *argv[])
 {
 	return n_args_is_ok(argc) && files_ok(argv);
 }
-
-/*
- * LINKED LIST OPERATIONS
- */
-
- void
- init_list(ListType *list)
- {
-	list->first = NULL;
-	list->n_elems = 0;
- }
-
- void
- add_to_list(ListType *list, unsigned char c)
- {
-	 /*
-	  *List implemented like a queue
-	  */
-	CellType *new_cell = NULL;
-	CellType *aux = list->first;
-
-	while(aux->next != NULL){
-		aux = aux->next;
-	}
-	new_cell = malloc(sizeof(unsigned char));
-	if(new_cell == NULL)
-		errx(EXIT_FAILURE, "%s\n", "Allocate memory failed");
-	new_cell->elem = c;
-	new_cell->next = NULL;
-	aux->next = new_cell;
-	(list->n_elems)++;
- }
 
 void
 print_hexa(unsigned char *str, int len)
@@ -180,36 +136,25 @@ set_key_length(unsigned char *key, int size)
 void
 get_key(char *key_file, char *key)
 {
-	FILE *key_fd;
+	int key_fd;
+	ssize_t n_bytes_rode;
 
 	//open file
-	key_fd = fopen(key_file, "r");
-	if(key_fd == NULL)
+	key_fd = open(key_file, O_RDONLY);
+	if(key_fd == -1)
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
-	//Leer del fichero llamando a read
-	/*
-	while(1){
-		n_bytes_rode = read(key_fd, key_buf)
-		if(n_bytes_rode < 0)
-			errx(EXIT_FAILURE, "%s\n", "File reading failed");
-		if(bytes == 0)
-			break;
-		add()
-		key_len += n_bytes_rode;
+	n_bytes_rode = read(key_fd, key, BlockSize);
 
-	}
+	if(n_bytes_rode < 0)
+		errx(EXIT_FAILURE, "%s\n", "File reading failed");
 
-	fclose(key_fd); //close file
+	close(key_fd); //close file
 
-	if(strlen((unsigned char*)key) < SHA_DIGEST_LENGTH){
-		raise_warning_len();
-	}
 	//if key length is smaller than, BlockSize, add padding until BlockSize
-	set_key_length(key, BlockSize);
+	//set_key_length(key);
 	// ******* HASTA AQUI ESTA BIEN! *******
 	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
-	*/
 }
 
 void
@@ -218,12 +163,9 @@ print_hmacsha1(char *data_file, char *key_file)
 	/*
 	 *Print hmacsha1 of data file given key
 	 */
-	ListType list;
 	unsigned char sha1_hash[SHA_DIGEST_LENGTH];
-	char key[MaxKeyLen];
+	char key[BlockSize];
 	//unsigned char ipad[BlockSize];
-
-	init_list(&list);
 
 	//1º Get key from key_file
 	get_key(key_file, key);
