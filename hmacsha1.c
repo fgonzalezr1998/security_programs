@@ -106,33 +106,32 @@ get_sha1(char *data_file, unsigned char *sha1_hash)
 	SHA1_Final(sha1_hash, &c);
 	fclose(data_fd);
 }
-/*
+
 void
-add_padding(unsigned char *src, int block_size)
+add_padding(char *str, int len)
 {
+	/*
+	 * Add padding to 'src' until BlockSize
+	 */
 	int padding_len;
-	unsigned char *padding = NULL;
 
-	padding_len = block_size - strlen((char *)src) + 1;
+	padding_len = BlockSize - len;
 	printf("%d\n", padding_len);
-	padding = (unsigned char*)malloc((padding_len + 1) * sizeof(char));
-	if(padding == NULL){
-		errx(EXIT_FAILURE, "%s\n", "Memory Allocation Failed");
-	}
 
-	memset(padding, '0', padding_len); //TRATAR UN POSIBLE ERROR DE MEMSET!
-	strncat(src, padding, padding_len);
+	for(int i = len - 1; i < len + padding_len; i++){
+		str[i] = '0';
+	}
 }
 
 void
-set_key_length(unsigned char *key, int size)
+set_key_length(char *key, int size)
 {
 	if(strlen((char *)key) < size)
 		add_padding(key, BlockSize);
 	else
 		key[BlockSize - 1] = '\0';
 }
-*/
+
 void
 get_key(char *key_file, char *key)
 {
@@ -152,9 +151,24 @@ get_key(char *key_file, char *key)
 	close(key_fd); //close file
 
 	//if key length is smaller than, BlockSize, add padding until BlockSize
-	//set_key_length(key);
+	if(n_bytes_rode < BlockSize){
+		add_padding(key, (int)n_bytes_rode);
+	}
 	// ******* HASTA AQUI ESTA BIEN! *******
 	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
+	for(int i = 0; i < BlockSize; i++){
+		printf("%c", key[i]);
+	}
+	printf("\n");
+}
+
+void
+get_ipad_opad(char *ipad, char *opad)
+{
+	for(int i = 0; i < BlockSize; i++){
+		ipad[i] = IPadByte;
+		opad[i] = OPadByte;
+	}
 }
 
 void
@@ -164,13 +178,14 @@ print_hmacsha1(char *data_file, char *key_file)
 	 *Print hmacsha1 of data file given key
 	 */
 	unsigned char sha1_hash[SHA_DIGEST_LENGTH];
-	char key[BlockSize];
+	char key[BlockSize], ipad[BlockSize], opad[BlockSize];
 	//unsigned char ipad[BlockSize];
 
 	//1º Get key from key_file
 	get_key(key_file, key);
 
-	//get_ipad();
+	//2º Get ipad and opad
+	get_ipad_opad(ipad, opad);
 
 	get_sha1(data_file, sha1_hash);
 }
