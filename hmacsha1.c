@@ -75,18 +75,28 @@ raise_warning_len()
 }
 
 void
-get_sha1(char *data_file, unsigned char *sha1_hash)
+make_xor(char *op1, char * op2, int size, unsigned char *dest)
+{
+	for(int i = 0; i < size; i++){
+		dest[i] = (unsigned char)op1[i] ^ (unsigned char)op2[i];
+	}
+}
+
+void
+get_first_sha1(char *data_file, char *key, char *ipad, unsigned char *sha1_hash)
 {
 	/*
 	 *get sha1 hash from 'data_file' file
 	 */
-
-	FILE *data_fd;
-	int eof = 0;
+	int data_fd, eof, n_bytes_rode;
+	eof = 0;
 	SHA_CTX c;
+	unsigned char xor[BlockSize];
 
-	data_fd = fopen(data_file, "r");
-	if(data_fd == NULL)
+	make_xor(key, ipad, BlockSize, xor);
+
+	data_fd = open(data_file, O_RDONLY);
+	if(data_fd == -1)
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
 	//read data
@@ -95,16 +105,20 @@ get_sha1(char *data_file, unsigned char *sha1_hash)
 	if(! SHA1_Init(&c)){
 		errx(EXIT_FAILURE, "%s\n", "Hash failed");
 	}
+	SHA1_Update(&c, data_buf, strlen(data_buf));
 	while(! eof){
-		if(fgets(data_buf, BlockSize, data_fd) == NULL){
+		n_bytes_rode = read(data_fd, data_buf, BlockSize);
+
+		if(n_bytes_rode < 0)
+			errx(EXIT_FAILURE, "%s\n", "Error reading data file!");
+
+		if(n_bytes_rode < BlockSize)
 			eof = 1;
-			continue;
-		}else{
-			SHA1_Update(&c, data_buf, strlen(data_buf));
-		}
+
+		SHA1_Update(&c, data_buf, n_bytes_rode);
 	}
 	SHA1_Final(sha1_hash, &c);
-	fclose(data_fd);
+	close(data_fd);
 }
 
 void
@@ -143,6 +157,7 @@ get_key(char *key_file, char *key)
 	if(key_fd == -1)
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
+	//¿qUE MANERA MEJOR HAY DE LEER LA CLAVE PARA NO DEPENDER DE UNA SOLA LECTURA?
 	n_bytes_rode = read(key_fd, key, BlockSize);
 
 	if(n_bytes_rode < 0)
@@ -156,10 +171,6 @@ get_key(char *key_file, char *key)
 	}
 	// ******* HASTA AQUI ESTA BIEN! *******
 	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
-	for(int i = 0; i < BlockSize; i++){
-		printf("%c", key[i]);
-	}
-	printf("\n");
 }
 
 void
@@ -172,12 +183,44 @@ get_ipad_opad(char *ipad, char *opad)
 }
 
 void
+concatenate(unsigned char *str1, unsigned char *str2, int size1,
+								int size2, unsigned char *dest)
+{
+	int i;
+	for(i = 0; i < size1; i++){
+		dest[i] = str1[i];
+	}
+	for(i = 0; i < size2; i++){
+		dest[size1 + i] = str2[i];
+	}
+}
+
+void
+get_hmac(char *key, char *opad, unsigned char *hash_first, unsigned char *hmac)
+{
+	int hash_arg_size = BlockSize + SHA_DIGEST_LENGTH - 1;
+	unsigned char xor[BlockSize], hash_arg[hash_arg_size];
+	SHA_CTX c;
+
+	make_xor(key, opad, BlockSize, xor);
+	concatenate(xor, hash_first, BlockSize, SHA_DIGEST_LENGTH, hash_arg);
+
+	if(! SHA1_Init(&c)){
+		errx(EXIT_FAILURE, "%s\n", "Hash failed");
+	}
+	for(int i = 0; i < hash_arg_size; i++)
+		SHA1_Update(&c, &hash_arg[i], 1);
+
+	SHA1_Final(hmac, &c);
+}
+
+void
 print_hmacsha1(char *data_file, char *key_file)
 {
 	/*
 	 *Print hmacsha1 of data file given key
 	 */
-	unsigned char sha1_hash[SHA_DIGEST_LENGTH];
+	unsigned char sha1_hash_first[SHA_DIGEST_LENGTH], hmac[SHA_DIGEST_LENGTH];
 	char key[BlockSize], ipad[BlockSize], opad[BlockSize];
 	//unsigned char ipad[BlockSize];
 
@@ -187,7 +230,10 @@ print_hmacsha1(char *data_file, char *key_file)
 	//2º Get ipad and opad
 	get_ipad_opad(ipad, opad);
 
-	get_sha1(data_file, sha1_hash);
+	get_first_sha1(data_file, key, ipad, sha1_hash_first);
+	get_hmac(key, opad, sha1_hash_first, hmac);
+
+	print_hexa(hmac, SHA_DIGEST_LENGTH);
 }
 
 int
