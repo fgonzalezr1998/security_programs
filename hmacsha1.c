@@ -5,12 +5,13 @@
 #include <unistd.h>
 #include <openssl/sha.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 enum{
 
 	NArgs = 3,
 	BlockSize = 64,
-	MaxKeyLen = 2048,
 	IPadByte = 0x36,
 	OPadByte = 0x5C,
 };
@@ -75,15 +76,15 @@ raise_warning_len()
 }
 
 void
-make_xor(char *op1, char * op2, int size, unsigned char *dest)
+make_xor(unsigned char *op1, unsigned char * op2, int size, unsigned char *dest)
 {
 	for(int i = 0; i < size; i++){
-		dest[i] = (unsigned char)op1[i] ^ (unsigned char)op2[i];
+		dest[i] = op1[i] ^ op2[i];
 	}
 }
 
 void
-get_first_sha1(char *data_file, char *key, char *ipad, unsigned char *sha1_hash)
+get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigned char *sha1_hash)
 {
 	/*
 	 *get sha1 hash from 'data_file' file
@@ -105,7 +106,7 @@ get_first_sha1(char *data_file, char *key, char *ipad, unsigned char *sha1_hash)
 	if(! SHA1_Init(&c)){
 		errx(EXIT_FAILURE, "%s\n", "Hash failed");
 	}
-	SHA1_Update(&c, data_buf, strlen(data_buf));
+	SHA1_Update(&c, xor, BlockSize);
 	while(! eof){
 		n_bytes_rode = read(data_fd, data_buf, BlockSize);
 
@@ -114,7 +115,9 @@ get_first_sha1(char *data_file, char *key, char *ipad, unsigned char *sha1_hash)
 
 		if(n_bytes_rode < BlockSize)
 			eof = 1;
-
+		for(int i = 0; i < n_bytes_rode; i++){
+			printf("%c\n", data_buf[i]);
+		}
 		SHA1_Update(&c, data_buf, n_bytes_rode);
 	}
 	SHA1_Final(sha1_hash, &c);
@@ -122,7 +125,7 @@ get_first_sha1(char *data_file, char *key, char *ipad, unsigned char *sha1_hash)
 }
 
 void
-add_padding(char *str, int len)
+add_padding(unsigned char *str, int len)
 {
 	/*
 	 * Add padding to 'src' until BlockSize
@@ -130,7 +133,6 @@ add_padding(char *str, int len)
 	int padding_len;
 
 	padding_len = BlockSize - len;
-	printf("%d\n", padding_len);
 
 	for(int i = len - 1; i < len + padding_len; i++){
 		str[i] = '0';
@@ -138,7 +140,7 @@ add_padding(char *str, int len)
 }
 
 void
-set_key_length(char *key, int size)
+set_key_length(unsigned char *key, int size)
 {
 	if(strlen((char *)key) < size)
 		add_padding(key, BlockSize);
@@ -147,34 +149,45 @@ set_key_length(char *key, int size)
 }
 
 void
-get_key(char *key_file, char *key)
+get_key(char *key_file, unsigned char *key)
 {
 	int key_fd;
+	struct stat statbuf;
 	ssize_t n_bytes_rode;
+	SHA_CTX c;
 
 	//open file
 	key_fd = open(key_file, O_RDONLY);
 	if(key_fd == -1)
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
-	//¿qUE MANERA MEJOR HAY DE LEER LA CLAVE PARA NO DEPENDER DE UNA SOLA LECTURA?
-	n_bytes_rode = read(key_fd, key, BlockSize);
+	if(fstat(key_fd, &statbuf) < 0)
+		errx(EXIT_FAILURE, "%s\n", "Fail getting file state!");
+		
+	n_bytes_rode = read(key_fd, key, statbuf.st_size);
+	close(key_fd); //close file
 
 	if(n_bytes_rode < 0)
 		errx(EXIT_FAILURE, "%s\n", "File reading failed");
 
-	close(key_fd); //close file
+	if(n_bytes_rode < SHA_DIGEST_LENGTH)
+		raise_warning_len();
 
-	//if key length is smaller than, BlockSize, add padding until BlockSize
-	if(n_bytes_rode < BlockSize){
-		add_padding(key, (int)n_bytes_rode);
+	if(n_bytes_rode > BlockSize){
+
+		if(! SHA1_Init(&c)){
+			errx(EXIT_FAILURE, "%s\n", "Hash failed");
+		}
+		SHA1_Update(&c, key, n_bytes_rode);
+		SHA1_Final(key, &c);
 	}
+	add_padding(key, (int)n_bytes_rode);
 	// ******* HASTA AQUI ESTA BIEN! *******
 	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
 }
 
 void
-get_ipad_opad(char *ipad, char *opad)
+get_ipad_opad(unsigned char *ipad, unsigned char *opad)
 {
 	for(int i = 0; i < BlockSize; i++){
 		ipad[i] = IPadByte;
@@ -196,7 +209,7 @@ concatenate(unsigned char *str1, unsigned char *str2, int size1,
 }
 
 void
-get_hmac(char *key, char *opad, unsigned char *hash_first, unsigned char *hmac)
+get_hmac(unsigned char *key, unsigned char *opad, unsigned char *hash_first, unsigned char *hmac)
 {
 	int hash_arg_size = BlockSize + SHA_DIGEST_LENGTH - 1;
 	unsigned char xor[BlockSize], hash_arg[hash_arg_size];
@@ -221,7 +234,7 @@ print_hmacsha1(char *data_file, char *key_file)
 	 *Print hmacsha1 of data file given key
 	 */
 	unsigned char sha1_hash_first[SHA_DIGEST_LENGTH], hmac[SHA_DIGEST_LENGTH];
-	char key[BlockSize], ipad[BlockSize], opad[BlockSize];
+	unsigned char key[BlockSize], ipad[BlockSize], opad[BlockSize];
 	//unsigned char ipad[BlockSize];
 
 	//1º Get key from key_file
