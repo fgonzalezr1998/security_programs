@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <openssl/rsa.h>
+#include <openssl/sha.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -11,6 +12,7 @@
 enum{
     MinArgs = 3,
     MaxFilenameBytes = 40,
+    BlockSize = 64,
 };
 
 const unsigned char IDSHA12[] = {0x30, 0x51, 0x30, 0x0d,
@@ -57,6 +59,18 @@ args_ok(int argc, char *argv[])
 }
 
 void
+print_hexa(unsigned char *str, int len)
+{
+	/*
+	 *print 'str' using hexadecimal format
+	 */
+	for(int i = 0; i < len; i++)
+		printf("%02x", str[i]);
+
+	printf("\n");
+}
+
+void
 get_file_name(char *data_file, char *file_name)
 {
     char *fn;
@@ -78,11 +92,41 @@ check_signature(char *signature_file, char *signed_data_file, char *public_key_f
 }
 
 void
+get_sha512(char *data_file, char *file_name, unsigned char *hash)
+{
+    SHA512_CTX c;
+    int fd, bytes;
+    unsigned char buf[BlockSize];
+    //open 'data_file'
+    fd = open(data_file, O_RDONLY);
+    if(fd < 0)
+        errx(EXIT_FAILURE, "%s[%s]\n", "Error openning ", file_name);
+    //Alimento la hash con los datosd el fichero
+    if(SHA512_Init(&c) < 0)
+        exit(EXIT_FAILURE);
+    do{
+        bytes = read(fd, buf, BlockSize);
+        if(bytes > 0)
+            SHA512_Update(&c, buf, bytes);
+    }while(bytes > 0);
+    //Alimento la hash con el nombre del fichero
+    for(int i = 0; i < strlen(file_name); i++){
+        buf[i] = (unsigned char)(file_name[i]);
+    }
+    SHA512_Update(&c, buf, strlen(file_name));
+
+    SHA512_Final(hash, &c);
+}
+
+void
 sign(char *data_file, char * pivkey_file)
 {
     char file_name[MaxFilenameBytes];
+    unsigned char hash[SHA512_DIGEST_LENGTH];
     get_file_name(data_file, file_name);
     //HASTA AQUI ESTA BIEN
+    get_sha512(data_file, file_name, hash);
+    print_hexa(hash, SHA512_DIGEST_LENGTH);
 }
 
 int
