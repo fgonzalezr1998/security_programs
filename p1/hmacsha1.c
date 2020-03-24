@@ -89,7 +89,7 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 	/*
 	 *get sha1 hash from 'data_file' file
 	 */
-	int data_fd, eof, n_bytes_rode;
+	int data_fd, eof, n_bytes;
 	eof = 0;
 	SHA_CTX c;
 	unsigned char xor[BlockSize];
@@ -101,26 +101,25 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
 	//read data
-	char data_buf[BlockSize];
+	unsigned char data_buf[BlockSize];
 
 	if(! SHA1_Init(&c)){
 		errx(EXIT_FAILURE, "%s\n", "Hash failed");
 	}
 	SHA1_Update(&c, xor, BlockSize);
 	while(! eof){
-		n_bytes_rode = read(data_fd, data_buf, BlockSize);
+		n_bytes = read(data_fd, data_buf, BlockSize);
 
-		if(n_bytes_rode < 0)
+		if(n_bytes < 0)
 			errx(EXIT_FAILURE, "%s\n", "Error reading data file!");
 
-		if(n_bytes_rode < BlockSize)
+		if(n_bytes < BlockSize)
 			eof = 1;
-		for(int i = 0; i < n_bytes_rode; i++){
-			printf("%c\n", data_buf[i]);
-		}
-		SHA1_Update(&c, data_buf, n_bytes_rode);
+
+		SHA1_Update(&c, data_buf, n_bytes);
 	}
 	SHA1_Final(sha1_hash, &c);
+
 	close(data_fd);
 }
 
@@ -134,26 +133,17 @@ add_padding(unsigned char *str, int len)
 
 	padding_len = BlockSize - len;
 
-	for(int i = len - 1; i < len + padding_len; i++){
-		str[i] = '0';
+	for(int i = len; i < len + padding_len; i++){
+		str[i] = (unsigned char)0x00;
 	}
-}
-
-void
-set_key_length(unsigned char *key, int size)
-{
-	if(strlen((char *)key) < size)
-		add_padding(key, BlockSize);
-	else
-		key[BlockSize - 1] = '\0';
 }
 
 void
 get_key(char *key_file, unsigned char *key)
 {
-	int key_fd;
+	int key_fd, key_len;
 	struct stat statbuf;
-	ssize_t n_bytes_rode;
+	ssize_t n_bytes;
 	SHA_CTX c;
 
 	//open file
@@ -163,25 +153,28 @@ get_key(char *key_file, unsigned char *key)
 
 	if(fstat(key_fd, &statbuf) < 0)
 		errx(EXIT_FAILURE, "%s\n", "Fail getting file state!");
-		
-	n_bytes_rode = read(key_fd, key, statbuf.st_size);
+
+	n_bytes = read(key_fd, key, (int)statbuf.st_size);
 	close(key_fd); //close file
 
-	if(n_bytes_rode < 0)
+	if(n_bytes < 0)
 		errx(EXIT_FAILURE, "%s\n", "File reading failed");
 
-	if(n_bytes_rode < SHA_DIGEST_LENGTH)
+	key_len = (int)n_bytes;
+	if(n_bytes < SHA_DIGEST_LENGTH)
 		raise_warning_len();
 
-	if(n_bytes_rode > BlockSize){
+	if(n_bytes > BlockSize){
 
 		if(! SHA1_Init(&c)){
 			errx(EXIT_FAILURE, "%s\n", "Hash failed");
 		}
-		SHA1_Update(&c, key, n_bytes_rode);
+		SHA1_Update(&c, key, n_bytes);
 		SHA1_Final(key, &c);
+
+		key_len = SHA_DIGEST_LENGTH;
 	}
-	add_padding(key, (int)n_bytes_rode);
+	add_padding(key, key_len);
 	// ******* HASTA AQUI ESTA BIEN! *******
 	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
 }
@@ -240,10 +233,15 @@ print_hmacsha1(char *data_file, char *key_file)
 	//1º Get key from key_file
 	get_key(key_file, key);
 
+	//DEPURACION
+	print_hexa(key, BlockSize);
+
 	//2º Get ipad and opad
 	get_ipad_opad(ipad, opad);
 
 	get_first_sha1(data_file, key, ipad, sha1_hash_first);
+	//DEPURACION
+	print_hexa(sha1_hash_first, SHA_DIGEST_LENGTH);
 	get_hmac(key, opad, sha1_hash_first, hmac);
 
 	print_hexa(hmac, SHA_DIGEST_LENGTH);
