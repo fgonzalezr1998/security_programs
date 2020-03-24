@@ -242,6 +242,7 @@ print_hmacsha1(char *data_file, char *key_file)
 	get_first_sha1(data_file, key, ipad, sha1_hash_first);
 	//DEPURACION
 	print_hexa(sha1_hash_first, SHA_DIGEST_LENGTH);
+	
 	get_hmac(key, opad, sha1_hash_first, hmac);
 
 	print_hexa(hmac, SHA_DIGEST_LENGTH);
