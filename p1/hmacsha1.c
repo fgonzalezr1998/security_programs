@@ -16,6 +16,40 @@ enum{
 	OPadByte = 0x5C,
 };
 
+void
+text2yellow()
+{
+	fprintf(stderr, "\033[1;33m");
+}
+void
+text2red()
+{
+	fprintf(stderr, "\033[1;31m");
+}
+
+void
+reset()
+{
+	fprintf(stderr, "\033[0m");
+}
+
+void
+raise_warning_len()
+{
+	text2yellow();
+	fprintf(stderr, "[WARN] key is too short (should be longer than %d bytes)\n", SHA_DIGEST_LENGTH);
+	reset();
+}
+
+void
+raise_error(char *str)
+{
+	text2red();
+	fprintf(stderr, "[ERROR] %s\n", str);
+	reset();
+	exit(EXIT_FAILURE);
+}
+
 int
 n_args_is_ok(int n)
 {
@@ -30,7 +64,9 @@ files_ok(char * argv[])
 	for(int i = NArgs - 2; i < NArgs; i++){
 		permissions_ok = access(argv[i], R_OK);
 		if(permissions_ok != 0){
+			text2red();
 			fprintf(stderr, "File [%s] has not required permissions\n", argv[i]);
+			reset();
 			return 0;
 		}
 	}
@@ -56,26 +92,6 @@ print_hexa(unsigned char *str, int len)
 }
 
 void
-yellow()
-{
-	fprintf(stderr, "\033[1;33m");
-}
-
-void
-reset()
-{
-	fprintf(stderr, "\033[0m");
-}
-
-void
-raise_warning_len()
-{
-	yellow();
-	fprintf(stderr, "[WARN] key is too short (should be longer than %d bytes)\n", SHA_DIGEST_LENGTH);
-	reset();
-}
-
-void
 make_xor(unsigned char *op1, unsigned char * op2, int size, unsigned char *dest)
 {
 	for(int i = 0; i < size; i++){
@@ -98,31 +114,31 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 
 	data_fd = open(data_file, O_RDONLY);
 	if(data_fd == -1)
-		errx(EXIT_FAILURE, "%s\n", "open file failed");
+		raise_error("open file failed");
 
 	//Read data
 	unsigned char data_buf[BlockSize];
 
 	if(! SHA1_Init(&c)){
-		errx(EXIT_FAILURE, "%s\n", "Hash Init failed!");
+		raise_error("Hash Init failed!");
 	}
 	if(SHA1_Update(&c, xor, BlockSize) < 0)
-		errx(EXIT_FAILURE, "%s\n", "SHA1 Update failed!");
+		raise_error("SHA1 Update failed!");
 
 	while(! eof){
 		n_bytes = read(data_fd, data_buf, BlockSize);
 
 		if(n_bytes < 0)
-			errx(EXIT_FAILURE, "%s\n", "Error reading data file!");
+			raise_error("Error reading data file!");
 
 		if(n_bytes < BlockSize)
 			eof = 1;
 
 		if(SHA1_Update(&c, data_buf, n_bytes) < 0)
-			errx(EXIT_FAILURE, "%s\n", "SHA1 Update failed!");
+			raise_error("SHA1 Update failed!");
 	}
 	if(SHA1_Final(sha1_hash, &c) < 0)
-		errx(EXIT_FAILURE, "%s\n", "SHA1 Final failed!");
+		raise_error("SHA1 Final failed!");
 
 	close(data_fd);
 }
@@ -150,16 +166,16 @@ get_key(char *key_file, unsigned char *key)
 	//open file
 	key_fd = open(key_file, O_RDONLY);
 	if(key_fd == -1)
-		errx(EXIT_FAILURE, "%s\n", "open file failed");
+		raise_error("open file failed");
 
 	if(fstat(key_fd, &statbuf) < 0)
-		errx(EXIT_FAILURE, "%s\n", "Fail getting file state!");
+		raise_error("Get file state failed!");
 
 	n_bytes = read(key_fd, key, (int)statbuf.st_size);
 	close(key_fd); //close file
 
 	if(n_bytes < 0)
-		errx(EXIT_FAILURE, "%s\n", "File reading failed");
+		raise_error("File reading failed");
 
 	key_len = (int)n_bytes;
 
@@ -169,12 +185,12 @@ get_key(char *key_file, unsigned char *key)
 	if(n_bytes > BlockSize){
 
 		if(! SHA1_Init(&c)){
-			errx(EXIT_FAILURE, "%s\n", "Hash Init failed!");
+			raise_error("Hash Init failed!");
 		}
 		if(SHA1_Update(&c, key, n_bytes) < 0)
-			errx(EXIT_FAILURE, "%s\n", "SHA1 Update failed!");
+			raise_error("SHA1 Update failed!");
 		if(SHA1_Final(key, &c) < 0)
-			errx(EXIT_FAILURE, "%s\n", "SHA1 Final failed!");
+			raise_error("SHA1 Final failed!");
 
 		key_len = SHA_DIGEST_LENGTH;
 	}
@@ -214,7 +230,7 @@ get_hmac(unsigned char *key, unsigned char *opad, unsigned char *hash_first, uns
 	concatenate(xor, hash_first, BlockSize, SHA_DIGEST_LENGTH, hash_arg);
 
 	if(! SHA1_Init(&c)){
-		errx(EXIT_FAILURE, "%s\n", "Hash failed");
+		raise_error("Hash failed");
 	}
 	for(int i = 0; i < hash_arg_size; i++)
 		SHA1_Update(&c, &hash_arg[i], 1);
@@ -251,7 +267,7 @@ int
 main(int argc, char *argv[])
 {
 	if(! args_ok(argc, argv))
-		errx(EXIT_FAILURE, "%s\n", "[Usage Error] invalid arguments");
+		raise_error("[Usage Error] invalid arguments");
 
 	print_hmacsha1(argv[NArgs - 2], argv[NArgs - 1]);
 
