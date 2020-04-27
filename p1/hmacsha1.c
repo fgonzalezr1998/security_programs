@@ -71,7 +71,7 @@ void
 raise_warning_len()
 {
 	yellow();
-	fprintf(stderr, "[WARN] Key length is shorter than %d, you should use a longer key\n", SHA_DIGEST_LENGTH);
+	fprintf(stderr, "[WARN] key is too short (should be longer than %d bytes)\n", SHA_DIGEST_LENGTH);
 	reset();
 }
 
@@ -100,13 +100,15 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 	if(data_fd == -1)
 		errx(EXIT_FAILURE, "%s\n", "open file failed");
 
-	//read data
+	//Read data
 	unsigned char data_buf[BlockSize];
 
 	if(! SHA1_Init(&c)){
-		errx(EXIT_FAILURE, "%s\n", "Hash failed");
+		errx(EXIT_FAILURE, "%s\n", "Hash Init failed!");
 	}
-	SHA1_Update(&c, xor, BlockSize);
+	if(SHA1_Update(&c, xor, BlockSize) < 0)
+		errx(EXIT_FAILURE, "%s\n", "SHA1 Update failed!");
+
 	while(! eof){
 		n_bytes = read(data_fd, data_buf, BlockSize);
 
@@ -116,9 +118,11 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 		if(n_bytes < BlockSize)
 			eof = 1;
 
-		SHA1_Update(&c, data_buf, n_bytes);
+		if(SHA1_Update(&c, data_buf, n_bytes) < 0)
+			errx(EXIT_FAILURE, "%s\n", "SHA1 Update failed!");
 	}
-	SHA1_Final(sha1_hash, &c);
+	if(SHA1_Final(sha1_hash, &c) < 0)
+		errx(EXIT_FAILURE, "%s\n", "SHA1 Final failed!");
 
 	close(data_fd);
 }
@@ -129,11 +133,8 @@ add_padding(unsigned char *str, int len)
 	/*
 	 * Add padding to 'src' until BlockSize
 	 */
-	int padding_len;
 
-	padding_len = BlockSize - len;
-
-	for(int i = len; i < len + padding_len; i++){
+	for(int i = len; i < BlockSize; i++){
 		str[i] = (unsigned char)0x00;
 	}
 }
@@ -161,22 +162,23 @@ get_key(char *key_file, unsigned char *key)
 		errx(EXIT_FAILURE, "%s\n", "File reading failed");
 
 	key_len = (int)n_bytes;
+
 	if(n_bytes < SHA_DIGEST_LENGTH)
 		raise_warning_len();
 
 	if(n_bytes > BlockSize){
 
 		if(! SHA1_Init(&c)){
-			errx(EXIT_FAILURE, "%s\n", "Hash failed");
+			errx(EXIT_FAILURE, "%s\n", "Hash Init failed!");
 		}
-		SHA1_Update(&c, key, n_bytes);
-		SHA1_Final(key, &c);
+		if(SHA1_Update(&c, key, n_bytes) < 0)
+			errx(EXIT_FAILURE, "%s\n", "SHA1 Update failed!");
+		if(SHA1_Final(key, &c) < 0)
+			errx(EXIT_FAILURE, "%s\n", "SHA1 Final failed!");
 
 		key_len = SHA_DIGEST_LENGTH;
 	}
 	add_padding(key, key_len);
-	// ******* HASTA AQUI ESTA BIEN! *******
-	//Ya tengo la clave como debe estar, a longitud 64, o bien acortada o con padding
 }
 
 void
@@ -204,7 +206,7 @@ concatenate(unsigned char *str1, unsigned char *str2, int size1,
 void
 get_hmac(unsigned char *key, unsigned char *opad, unsigned char *hash_first, unsigned char *hmac)
 {
-	int hash_arg_size = BlockSize + SHA_DIGEST_LENGTH - 1;
+	int hash_arg_size = BlockSize + SHA_DIGEST_LENGTH;
 	unsigned char xor[BlockSize], hash_arg[hash_arg_size];
 	SHA_CTX c;
 
@@ -228,23 +230,20 @@ print_hmacsha1(char *data_file, char *key_file)
 	 */
 	unsigned char sha1_hash_first[SHA_DIGEST_LENGTH], hmac[SHA_DIGEST_LENGTH];
 	unsigned char key[BlockSize], ipad[BlockSize], opad[BlockSize];
-	//unsigned char ipad[BlockSize];
 
 	//1º Get key from key_file
 	get_key(key_file, key);
 
-	//DEPURACION
-	print_hexa(key, BlockSize);
-
 	//2º Get ipad and opad
 	get_ipad_opad(ipad, opad);
 
+	//3º Get first HSA1 -H(K XOR ipad, text)-
 	get_first_sha1(data_file, key, ipad, sha1_hash_first);
-	//DEPURACION
-	print_hexa(sha1_hash_first, SHA_DIGEST_LENGTH);
-	
+
+	//4º Conclude with HMAC Compute -H(K XOR opad, sha1_hash_first)-
 	get_hmac(key, opad, sha1_hash_first, hmac);
 
+	//Print HMAC in Hexadecimal Format
 	print_hexa(hmac, SHA_DIGEST_LENGTH);
 }
 
