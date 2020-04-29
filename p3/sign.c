@@ -203,7 +203,7 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
 }
 
 RSA *
-read_priv_key(char *privkey_file)
+private_key(char *privkey_file)
 {
     FILE *file;
     RSA *r;
@@ -256,7 +256,7 @@ sign(char *data_file, char * privkey_file)
     //Get EM
     get_msg_2_sign(hash, msg2sign);
     //Read Private Key
-    rsa = read_priv_key(privkey_file);
+    rsa = private_key(privkey_file);
 
     if(rsa == NULL)
         raise_error("Error reading private key", debug);
@@ -266,7 +266,7 @@ sign(char *data_file, char * privkey_file)
         raise_error("Error Allocating memory", debug);
 
     sign_len = RSA_private_encrypt(KeyLen, msg2sign, signed_data, rsa, RSA_NO_PADDING);
-    
+
     if(sign_len < 0)
         raise_error("Data sign failed!", debug);
 
