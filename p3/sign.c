@@ -17,6 +17,7 @@ enum{
     BlockSize = 64,
     KeyLen = 4096 / 8,
     IDSHA512Len = 19,
+    SignLen = 512,
 };
 
 int debug = 1;
@@ -88,6 +89,21 @@ args_ok(int argc, char *argv[])
         return file_isok(argv[MinArgs - 2]) && file_isok(argv[MinArgs - 1]);
 }
 
+RSA *
+private_key(char *privkey_file)
+{
+    FILE *file;
+    RSA *r;
+    file = fopen(privkey_file, "r");
+    if(file == NULL)
+        raise_error("Error openning private key file!", debug);
+
+    r = PEM_read_RSAPrivateKey(file, NULL, NULL, NULL);
+    fclose(file);
+
+    return r;
+}
+
 void
 print_hexa(unsigned char *str, int len)
 {
@@ -114,12 +130,97 @@ get_file_name(char *data_file, char *file_name)
 }
 
 void
-check_signature(char *signature_file, char *signed_data_file, char *public_key_file)
+read_sign(char *sf, unsigned char *signature)
 {
-    //1º decript data with publick key using RSA
-    //-see data len
-    //int data_fd = open(signed_data_file, O_RDONLY);
-    printf("%s\n", "Checkeo la firma!");
+    BIO *bio;
+    BIO *b64;
+    FILE *file;
+    int nb;
+
+    file = fopen(sf, "r");
+    if(file == NULL){
+        raise_error("Error opening signature file!", debug);
+    }
+
+    b64 = BIO_new(BIO_f_base64());
+    bio=BIO_new_fp(file, BIO_NOCLOSE);
+    BIO_push(b64, bio);
+
+    nb = BIO_read(b64, signature, SignLen);
+    fclose(file);
+    BIO_free(b64);
+
+    if(nb < 0)
+        raise_error("Error reading signature!", debug);
+}
+
+void
+decrypt_signature(unsigned char *s, char *pkf, unsigned char *ds)
+{
+    FILE *file;
+    RSA *rsa;
+    int pubkeylen;
+
+    file = fopen(pkf, "r");
+    if(file == NULL)
+        raise_error("Error openning public key file!", debug);
+
+    rsa = PEM_read_RSA_PUBKEY(file, NULL, NULL, NULL);
+    fclose(file);
+    if(rsa == NULL){
+        raise_error("Error reading public key!", debug);
+    }
+
+    pubkeylen = RSA_public_decrypt(SignLen, s, ds, rsa, RSA_NO_PADDING);
+
+    if(pubkeylen < 0)
+        raise_error("Error decrpting signature!", debug);
+}
+
+int
+padding_ok(unsigned char *decrypted_signature)
+{
+    int lenps, lent;
+
+    lent = IDSHA512Len + SHA512_DIGEST_LENGTH;
+    lenps = KeyLen - lent - 3;
+
+    if(decrypted_signature[0] != 0x00 || decrypted_signature[1] != 0x01)
+        return 0;
+    //check ps:
+    for(int i = 0; i < lenps; i++){
+        if(decrypted_signature[2 + i] != 0xFF)
+            return 0;
+    }
+    if(decrypted_signature[lenps + 2] != 0x00)
+        return 0;
+
+    return 1;
+}
+
+int
+hash_ok(char *data_file, unsigned char *decrypted_signature)
+{
+    return 1;
+}
+
+int
+is_decrypted_sign_ok(unsigned char *decrypted_signature, char *data_file)
+{
+    return padding_ok(decrypted_signature) && hash_ok(data_file, decrypted_signature);
+}
+
+void
+check_signature(char *signature_file, char *data_file, char *public_key_file)
+{
+    unsigned char signature[SignLen], decrypted_signature[SignLen];
+    //Read sign:
+    read_sign(signature_file, signature);
+    //Decrypt data:
+    decrypt_signature(signature, public_key_file, decrypted_signature);
+
+    if(! is_decrypted_sign_ok(decrypted_signature, data_file))
+        raise_error("BAD SIGNATURE", 1);
 }
 
 void
@@ -200,21 +301,6 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
         msg2sign[len + i] = t[i];
     }
     len += lent;
-}
-
-RSA *
-private_key(char *privkey_file)
-{
-    FILE *file;
-    RSA *r;
-    file = fopen(privkey_file, "r");
-    if(file == NULL)
-        raise_error("Error openning private key file!", debug);
-
-    r = PEM_read_RSAPrivateKey(file, NULL, NULL, NULL);
-    fclose(file);
-
-    return r;
 }
 
 void
