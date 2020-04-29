@@ -3,9 +3,10 @@
 #include <err.h>
 #include <string.h>
 #include <unistd.h>
-#include <openssl/rsa.h>
 #include <openssl/sha.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <openssl/bio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -14,7 +15,7 @@ enum{
     MinArgs = 3,
     MaxFilenameBytes = 40,
     BlockSize = 64,
-    KeyLen = 4069 / 8,
+    KeyLen = 4096 / 8,
     IDSHA512Len = 19,
 };
 
@@ -132,8 +133,11 @@ get_sha512(char *data_file, char *file_name, unsigned char *hash)
     if(fd < 0)
         errx(EXIT_FAILURE, "%s[%s]\n", "Error openning ", file_name);
     //Alimento la hash con los datos del fichero
-    if(SHA512_Init(&c) < 0)
+    if(SHA512_Init(&c) < 0){
+        close(fd);
         exit(EXIT_FAILURE);
+    }
+
     do{
         bytes = read(fd, buf, BlockSize);
         if(bytes > 0)
@@ -152,9 +156,7 @@ get_sha512(char *data_file, char *file_name, unsigned char *hash)
 void
 get_ps(int len, unsigned char *ps)
 {
-    for(int i = 0; i < len ; i++){
-        ps[i] = (unsigned char)0xFF;
-    }
+    memset(ps, (unsigned char)0xFF, len);
 }
 
 void
@@ -201,14 +203,42 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
 }
 
 RSA *
-read_priv_key(char *pivkey_file)
+read_priv_key(char *privkey_file)
 {
     FILE *file;
-    file = fopen(pivkey_file, "r");
+    RSA *r;
+    file = fopen(privkey_file, "r");
     if(file == NULL)
         raise_error("Error openning private key file!", debug);
 
-    return PEM_read_RSAPrivateKey(file, NULL, NULL, NULL);
+    r = PEM_read_RSAPrivateKey(file, NULL, NULL, NULL);
+    fclose(file);
+
+    return r;
+}
+
+void
+print_sign(unsigned char *signed_data, int sign_len)
+{
+    BIO* bio;
+    BIO* b64;
+    int nb;
+
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_fp(stdout, BIO_NOCLOSE);
+    BIO_push(b64, bio);
+
+    printf("%s\n", "---BEGIN SRO SIGNATURE---");
+
+    nb = BIO_write(b64, signed_data, sign_len);
+
+    if(nb < 0)
+        raise_error("BIO_write eror", debug);
+
+    BIO_flush(b64);
+    BIO_free_all(b64);
+
+    printf("%s\n", "---END SRO SIGNATURE---");
 }
 
 void
@@ -223,21 +253,26 @@ sign(char *data_file, char * privkey_file)
     get_file_name(data_file, file_name);
 
     get_sha512(data_file, file_name, hash);
-
     //Get EM
     get_msg_2_sign(hash, msg2sign);
-    //***HASTA AQUI ESTA BIEN***
-
     //Read Private Key
     rsa = read_priv_key(privkey_file);
+
     if(rsa == NULL)
         raise_error("Error reading private key", debug);
+
     signed_data = (unsigned char *)malloc(RSA_size(rsa));
     if(signed_data == NULL)
         raise_error("Error Allocating memory", debug);
+
     sign_len = RSA_private_encrypt(KeyLen, msg2sign, signed_data, rsa, RSA_NO_PADDING);
+    
     if(sign_len < 0)
-        raise_error("Error signing data!", debug);
+        raise_error("Data sign failed!", debug);
+
+    print_sign(signed_data, sign_len);
+
+    free(signed_data);
 }
 
 int
