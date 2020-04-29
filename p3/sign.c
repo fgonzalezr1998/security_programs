@@ -234,7 +234,7 @@ padding_ok(unsigned char *decrypted_signature)
     }
     if(decrypted_signature[lenps + 2] != 0x00)
         return 0;
-        
+
     return 1;
 }
 
@@ -285,8 +285,6 @@ check_signature(char *signature_file, char *data_file, char *public_key_file, in
     read_sign(signature_file, signature, debug);
     //Decrypt data:
     decrypt_signature(signature, public_key_file, decrypted_signature, debug);
-
-    print_hexa(decrypted_signature, SignLen);
 
     if(! decrypted_sign_is_ok(decrypted_signature, data_file, debug))
         raise_error("BAD SIGNATURE", 1);
@@ -352,7 +350,7 @@ print_sign(unsigned char *signed_data, int sign_len, int debug)
     bio = BIO_new_fp(stdout, BIO_NOCLOSE);
     BIO_push(b64, bio);
 
-    printf("%s\n", "---BEGIN SRO SIGNATURE---");
+    printf("%s\n", "-----BEGIN SRO SIGNATURE-----");
 
     nb = BIO_write(b64, signed_data, sign_len);
 
@@ -362,7 +360,7 @@ print_sign(unsigned char *signed_data, int sign_len, int debug)
     BIO_flush(b64);
     BIO_free_all(b64);
 
-    printf("%s\n", "---END SRO SIGNATURE---");
+    printf("%s\n", "-----END SRO SIGNATURE-----");
 }
 
 void
@@ -379,7 +377,7 @@ sign(char *data_file, char * privkey_file, int debug)
     get_sha512(data_file, file_name, hash, debug);
     //Get EM
     get_msg_2_sign(hash, msg2sign);
-    print_hexa(msg2sign, KeyLen);
+
     //Read Private Key
     rsa = private_key(privkey_file, debug);
 
@@ -423,11 +421,7 @@ main(int argc, char *argv[]) {
         reorganize_args(argv, &argc);
         debug = 1;
     }
-    printf("%d\n", argc);
-    for(int i = 0; i < argc; i++){
-        printf("%s, ", argv[i]);
-    }
-    printf("\n");
+
     if(! args_ok(argc, argv))
         errx(EXIT_FAILURE, "%s\n", "Usage Error");
 
