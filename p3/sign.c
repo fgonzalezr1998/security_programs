@@ -20,8 +20,6 @@ enum{
     SignLen = 512,
 };
 
-int debug = 1;
-
 const unsigned char IDSHA512[] = {0x30, 0x51, 0x30, 0x0d,
                                     0x06, 0x09, 0x60, 0x86,
                                     0x48, 0x01, 0x65, 0x03,
@@ -44,11 +42,14 @@ reset()
 void
 raise_error(char *str, int d)
 {
-    if(d){
-        text2red();
+    text2red();
+    if(d)
         fprintf(stderr, "[ERROR] %s\n", str);
-        reset();
-    }
+    else
+        printf("%s\n", "Error");
+
+    reset();
+
     exit(EXIT_FAILURE);
 }
 
@@ -72,9 +73,17 @@ long_version_isok(int argc, char *argv[])
 }
 
 int
-is_long_version(char *arg)
+is_long_version(char *arg1, char *arg2)
 {
-    return strncmp(arg, "-v", sizeof(char) * strlen("-v")) == 0;
+    return strncmp(arg1, "-v", sizeof(char) * strlen("-v")) == 0 ||
+                strncmp(arg2, "-v", sizeof(char) * strlen("-v")) == 0;
+}
+
+int
+is_debug_version(char *arg1, char *arg2)
+{
+    return strncmp(arg1, "-d", sizeof(char) * strlen("-d")) == 0 ||
+                strncmp(arg2, "-d", sizeof(char) * strlen("-d")) == 0;
 }
 
 int
@@ -83,14 +92,14 @@ args_ok(int argc, char *argv[])
     if(argc < MinArgs)
         return 0;
 
-    if(is_long_version(argv[MinArgs - 2]))
+    if(is_long_version(argv[MinArgs - 2], argv[MinArgs - 1]))
         return long_version_isok(argc, argv);
     else
         return file_isok(argv[MinArgs - 2]) && file_isok(argv[MinArgs - 1]);
 }
 
 RSA *
-private_key(char *privkey_file)
+private_key(char *privkey_file, int debug)
 {
     FILE *file;
     RSA *r;
@@ -130,7 +139,7 @@ get_file_name(char *data_file, char *file_name)
 }
 
 void
-read_sign(char *sf, unsigned char *signature)
+read_sign(char *sf, unsigned char *signature, int debug)
 {
     BIO *bio;
     BIO *b64;
@@ -155,7 +164,7 @@ read_sign(char *sf, unsigned char *signature)
 }
 
 void
-decrypt_signature(unsigned char *s, char *pkf, unsigned char *ds)
+decrypt_signature(unsigned char *s, char *pkf, unsigned char *ds, int debug)
 {
     FILE *file;
     RSA *rsa;
@@ -178,7 +187,7 @@ decrypt_signature(unsigned char *s, char *pkf, unsigned char *ds)
 }
 
 void
-get_sha512(char *data_file, char *file_name, unsigned char *hash)
+get_sha512(char *data_file, char *file_name, unsigned char *hash, int debug)
 {
     SHA512_CTX c;
     int fd, bytes;
@@ -186,8 +195,8 @@ get_sha512(char *data_file, char *file_name, unsigned char *hash)
     //open 'data_file'
     fd = open(data_file, O_RDONLY);
     if(fd < 0)
-        errx(EXIT_FAILURE, "%s[%s]\n", "Error openning ", file_name);
-        
+        raise_error("Error Openning file!", debug);
+
     if(SHA512_Init(&c) < 0){
         close(fd);
         exit(EXIT_FAILURE);
@@ -225,12 +234,12 @@ padding_ok(unsigned char *decrypted_signature)
     }
     if(decrypted_signature[lenps + 2] != 0x00)
         return 0;
-
+        
     return 1;
 }
 
 int
-hash_ok(char *data_file, unsigned char *decrypted_signature)
+hash_ok(char *data_file, unsigned char *decrypted_signature, int debug)
 {
     int lenps, lent;
     lent = IDSHA512Len + SHA512_DIGEST_LENGTH;
@@ -243,7 +252,7 @@ hash_ok(char *data_file, unsigned char *decrypted_signature)
 
     get_file_name(data_file, file_name);
 
-    get_sha512(data_file, file_name, hash2);
+    get_sha512(data_file, file_name, hash2, debug);
 
     return memcmp(hash1, hash2, SHA512_DIGEST_LENGTH) == 0;
 }
@@ -262,22 +271,24 @@ ID_ok(unsigned char *decrypted_signature)
 }
 
 int
-is_decrypted_sign_ok(unsigned char *decrypted_signature, char *data_file)
+decrypted_sign_is_ok(unsigned char *decrypted_signature, char *data_file, int debug)
 {
     return padding_ok(decrypted_signature) && ID_ok(decrypted_signature) &&
-                        hash_ok(data_file, decrypted_signature);
+                        hash_ok(data_file, decrypted_signature, debug);
 }
 
 void
-check_signature(char *signature_file, char *data_file, char *public_key_file)
+check_signature(char *signature_file, char *data_file, char *public_key_file, int debug)
 {
     unsigned char signature[SignLen], decrypted_signature[SignLen];
     //Read sign:
-    read_sign(signature_file, signature);
+    read_sign(signature_file, signature, debug);
     //Decrypt data:
-    decrypt_signature(signature, public_key_file, decrypted_signature);
+    decrypt_signature(signature, public_key_file, decrypted_signature, debug);
 
-    if(! is_decrypted_sign_ok(decrypted_signature, data_file))
+    print_hexa(decrypted_signature, SignLen);
+
+    if(! decrypted_sign_is_ok(decrypted_signature, data_file, debug))
         raise_error("BAD SIGNATURE", 1);
 }
 
@@ -331,7 +342,7 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
 }
 
 void
-print_sign(unsigned char *signed_data, int sign_len)
+print_sign(unsigned char *signed_data, int sign_len, int debug)
 {
     BIO* bio;
     BIO* b64;
@@ -355,7 +366,7 @@ print_sign(unsigned char *signed_data, int sign_len)
 }
 
 void
-sign(char *data_file, char * privkey_file)
+sign(char *data_file, char * privkey_file, int debug)
 {
     char file_name[MaxFilenameBytes];
     unsigned char hash[SHA512_DIGEST_LENGTH], msg2sign[KeyLen];
@@ -365,11 +376,12 @@ sign(char *data_file, char * privkey_file)
 
     get_file_name(data_file, file_name);
 
-    get_sha512(data_file, file_name, hash);
+    get_sha512(data_file, file_name, hash, debug);
     //Get EM
     get_msg_2_sign(hash, msg2sign);
+    print_hexa(msg2sign, KeyLen);
     //Read Private Key
-    rsa = private_key(privkey_file);
+    rsa = private_key(privkey_file, debug);
 
     if(rsa == NULL)
         raise_error("Error reading private key", debug);
@@ -383,21 +395,46 @@ sign(char *data_file, char * privkey_file)
     if(sign_len < 0)
         raise_error("Data sign failed!", debug);
 
-    print_sign(signed_data, sign_len);
+    print_sign(signed_data, sign_len, debug);
 
     free(signed_data);
+}
+
+void
+reorganize_args(char *args[], int *len_args)
+{
+    for(int i = MinArgs - 2; i < *len_args - 1; i++){
+        args[i] = args[i + 1];
+    }
+    (*len_args)--;
+
+    if(strncmp(args[MinArgs - 2], "-d", sizeof(char) * strlen("-d")) == 0)
+        args[MinArgs - 2] = "-v";
+
 }
 
 int
 main(int argc, char *argv[]) {
 
+    int debug = 0;
+
+    if(is_debug_version(argv[MinArgs - 2], argv[MinArgs - 1]))
+    {
+        reorganize_args(argv, &argc);
+        debug = 1;
+    }
+    printf("%d\n", argc);
+    for(int i = 0; i < argc; i++){
+        printf("%s, ", argv[i]);
+    }
+    printf("\n");
     if(! args_ok(argc, argv))
         errx(EXIT_FAILURE, "%s\n", "Usage Error");
 
-    if(is_long_version(argv[MinArgs - 2]))
-        check_signature(argv[MinArgs - 1], argv[MinArgs], argv[MinArgs + 1]);
+    if(is_long_version(argv[MinArgs - 2], argv[MinArgs - 1]))
+        check_signature(argv[MinArgs - 1], argv[MinArgs], argv[MinArgs + 1], debug);
     else
-        sign(argv[MinArgs - 2], argv[MinArgs - 1]);
+        sign(argv[MinArgs - 2], argv[MinArgs - 1], debug);
 
     exit(EXIT_SUCCESS);
 }
