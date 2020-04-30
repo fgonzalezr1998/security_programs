@@ -73,7 +73,7 @@ long_version_isok(int argc, char *argv[])
 }
 
 int
-is_long_version(char *arg1, char *arg2)
+is_verify_version(char *arg1, char *arg2)
 {
     return strncmp(arg1, "-v", sizeof(char) * strlen("-v")) == 0 ||
                 strncmp(arg2, "-v", sizeof(char) * strlen("-v")) == 0;
@@ -92,7 +92,7 @@ args_ok(int argc, char *argv[])
     if(argc < MinArgs)
         return 0;
 
-    if(is_long_version(argv[MinArgs - 2], argv[MinArgs - 1]))
+    if(is_verify_version(argv[MinArgs - 2], argv[MinArgs - 1]))
         return long_version_isok(argc, argv);
     else
         return file_isok(argv[MinArgs - 2]) && file_isok(argv[MinArgs - 1]);
@@ -147,9 +147,8 @@ read_sign(char *sf, unsigned char *signature, int debug)
     int nb;
 
     file = fopen(sf, "r");
-    if(file == NULL){
+    if(file == NULL)
         raise_error("Error opening signature file!", debug);
-    }
 
     b64 = BIO_new(BIO_f_base64());
     bio=BIO_new_fp(file, BIO_NOCLOSE);
@@ -176,6 +175,7 @@ decrypt_signature(unsigned char *s, char *pkf, unsigned char *ds, int debug)
 
     rsa = PEM_read_RSA_PUBKEY(file, NULL, NULL, NULL);
     fclose(file);
+
     if(rsa == NULL){
         raise_error("Error reading public key!", debug);
     }
@@ -283,7 +283,7 @@ check_signature(char *signature_file, char *data_file, char *public_key_file, in
     unsigned char signature[SignLen], decrypted_signature[SignLen];
     //Read sign:
     read_sign(signature_file, signature, debug);
-    //Decrypt data:
+    //Decrypt signature:
     decrypt_signature(signature, public_key_file, decrypted_signature, debug);
 
     if(! decrypted_sign_is_ok(decrypted_signature, data_file, debug))
@@ -326,6 +326,7 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
     msg2sign[0] = (unsigned char)0x00;
     msg2sign[1] = (unsigned char)0x01;
 
+    //put PS:
     len = 2;
     for(i = 0; i < lenps; i++){
         msg2sign[len + i] = ps[i];
@@ -333,6 +334,8 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
 
     len += lenps;
     msg2sign[len++] = (unsigned char)0x00;
+
+    //put T:
     for(i = 0; i < lent; i++){
         msg2sign[len + i] = t[i];
     }
@@ -342,8 +345,8 @@ get_msg_2_sign(unsigned char *hash, unsigned char *msg2sign)
 void
 print_sign(unsigned char *signed_data, int sign_len, int debug)
 {
-    BIO* bio;
-    BIO* b64;
+    BIO *bio;
+    BIO *b64;
     int nb;
 
     b64 = BIO_new(BIO_f_base64());
@@ -384,14 +387,17 @@ sign(char *data_file, char * privkey_file, int debug)
     if(rsa == NULL)
         raise_error("Error reading private key", debug);
 
+    //Allocate memory to save signed data:
     signed_data = (unsigned char *)malloc(RSA_size(rsa));
     if(signed_data == NULL)
         raise_error("Error Allocating memory", debug);
 
     sign_len = RSA_private_encrypt(KeyLen, msg2sign, signed_data, rsa, RSA_NO_PADDING);
 
-    if(sign_len < 0)
+    if(sign_len < 0){
+        free(signed_data);
         raise_error("Data sign failed!", debug);
+    }
 
     print_sign(signed_data, sign_len, debug);
 
@@ -425,7 +431,7 @@ main(int argc, char *argv[]) {
     if(! args_ok(argc, argv))
         errx(EXIT_FAILURE, "%s\n", "Usage Error");
 
-    if(is_long_version(argv[MinArgs - 2], argv[MinArgs - 1]))
+    if(is_verify_version(argv[MinArgs - 2], argv[MinArgs - 1]))
         check_signature(argv[MinArgs - 1], argv[MinArgs], argv[MinArgs + 1], debug);
     else
         sign(argv[MinArgs - 2], argv[MinArgs - 1], debug);

@@ -109,6 +109,7 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 	eof = 0;
 	SHA_CTX c;
 	unsigned char xor[BlockSize];
+	unsigned char data_buf[BlockSize];
 
 	make_xor(key, ipad, BlockSize, xor);
 
@@ -117,8 +118,6 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 		raise_error("open file failed");
 
 	//Read data
-	unsigned char data_buf[BlockSize];
-
 	if(! SHA1_Init(&c)){
 		raise_error("Hash Init failed!");
 	}
@@ -128,19 +127,21 @@ get_first_sha1(char *data_file, unsigned char *key, unsigned char *ipad, unsigne
 	while(! eof){
 		n_bytes = read(data_fd, data_buf, BlockSize);
 
-		if(n_bytes < 0)
+		if(n_bytes < 0){
+			close(data_fd);
 			raise_error("Error reading data file!");
-
+		}
 		if(n_bytes < BlockSize)
 			eof = 1;
 
-		if(SHA1_Update(&c, data_buf, n_bytes) < 0)
+		if(SHA1_Update(&c, data_buf, n_bytes) < 0){
+			close(data_fd);
 			raise_error("SHA1 Update failed!");
+		}
 	}
+	close(data_fd);
 	if(SHA1_Final(sha1_hash, &c) < 0)
 		raise_error("SHA1 Final failed!");
-
-	close(data_fd);
 }
 
 void
@@ -156,22 +157,45 @@ add_padding(unsigned char *str, int len)
 }
 
 void
+cut_key(unsigned char *key_aux, ssize_t n_bytes, int *key_len)
+{
+	SHA_CTX c;
+
+	if(! SHA1_Init(&c)){
+		raise_error("Hash Init failed!");
+	}
+	if(SHA1_Update(&c, key_aux, n_bytes) < 0)
+		raise_error("SHA1 Update failed!");
+	if(SHA1_Final(key_aux, &c) < 0)
+		raise_error("SHA1 Final failed!");
+
+	*key_len = SHA_DIGEST_LENGTH;
+}
+
+void
 get_key(char *key_file, unsigned char *key)
 {
 	int key_fd, key_len;
 	struct stat statbuf;
 	ssize_t n_bytes;
-	SHA_CTX c;
+	unsigned char *key_aux;
 
 	//open file
 	key_fd = open(key_file, O_RDONLY);
 	if(key_fd == -1)
 		raise_error("open file failed");
 
-	if(fstat(key_fd, &statbuf) < 0)
+	if(fstat(key_fd, &statbuf) < 0){
+		close(key_fd); //close file
 		raise_error("Get file state failed!");
+	}
+	/*
+	 *Use 'key_aux' because i don't now if 'statbuf.st_size' is greater than
+	 *memory reserved to 'key' and it may cause an overflow.
+	 */
+	key_aux = (unsigned char *)malloc(statbuf.st_size);
 
-	n_bytes = read(key_fd, key, (int)statbuf.st_size);
+	n_bytes = read(key_fd, key_aux, (int)statbuf.st_size);
 	close(key_fd); //close file
 
 	if(n_bytes < 0)
@@ -184,16 +208,9 @@ get_key(char *key_file, unsigned char *key)
 
 	if(n_bytes > BlockSize){
 
-		if(! SHA1_Init(&c)){
-			raise_error("Hash Init failed!");
-		}
-		if(SHA1_Update(&c, key, n_bytes) < 0)
-			raise_error("SHA1 Update failed!");
-		if(SHA1_Final(key, &c) < 0)
-			raise_error("SHA1 Final failed!");
-
-		key_len = SHA_DIGEST_LENGTH;
+		cut_key(key_aux, n_bytes, &key_len);
 	}
+	memcpy(key, key_aux, key_len);
 	add_padding(key, key_len);
 }
 
