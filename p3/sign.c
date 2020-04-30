@@ -418,8 +418,8 @@ reorganize_args(char *args[], int *len_args)
 }
 
 int
-main(int argc, char *argv[]) {
-
+main(int argc, char *argv[])
+{
     int debug = 0;
 
     if(is_debug_version(argv[MinArgs - 2], argv[MinArgs - 1]))
