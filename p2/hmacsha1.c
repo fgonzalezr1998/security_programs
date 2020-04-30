@@ -198,8 +198,10 @@ get_key(char *key_file, unsigned char *key)
 	n_bytes = read(key_fd, key_aux, (int)statbuf.st_size);
 	close(key_fd); //close file
 
-	if(n_bytes < 0)
+	if(n_bytes < 0){
 		raise_error("File reading failed");
+		free(key_aux);
+	}
 
 	key_len = (int)n_bytes;
 
@@ -211,6 +213,8 @@ get_key(char *key_file, unsigned char *key)
 		cut_key(key_aux, n_bytes, &key_len);
 	}
 	memcpy(key, key_aux, key_len);
+	free(key_aux);
+	
 	add_padding(key, key_len);
 }
 
